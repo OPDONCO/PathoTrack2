@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pathology & Blood Tracking System - Online</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
+    <style>
+        body { font-family: 'Sarabun', sans-serif; background-color: #f3f4f6; }
+        .timeline-line::before { content: ''; position: absolute; top: 24px; bottom: -24px; left: 24px; width: 2px; background-color: #e5e7eb; z-index: 0; }
+        .timeline-item:last-child .timeline-line::before { display: none; }
+        @keyframes popIn { 0% { transform: scale(0.9); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+        .animate-pop { animation: popIn 0.3s ease-out forwards; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // ==========================================
+        // เชื่อมต่อฐานข้อมูล Firebase ของ pathoOPDonco
+        // ==========================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyD1Trwshr3fKrlAxprVAPWorSZSg6Bstug",
+            authDomain: "pathoopdonco.firebaseapp.com",
+            databaseURL: "https://pathoopdonco-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "pathoopdonco",
+            storageBucket: "pathoopdonco.firebasestorage.app",
+            messagingSenderId: "22552785563",
+            appId: "1:22552785563:web:d37f010a54c431501fcc3e",
+            measurementId: "G-60YHNNQ4L2"
+        };
+
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.firestore();
+
+        // --- Data Sources ---
+        const employees = [
+            { id: '803758', name: 'นางสาวปนัดชนก เชิดฉาย' }, { id: '803792', name: 'นางกัญญาวีร์ อินทร์จันทร์' },
+            { id: '803879', name: 'นางสาววันสงกรานต์ ช่วยคุณ' }, { id: '813170', name: 'นางสาวนิธิศา น้ำเจริญ' },
+            { id: '813801', name: 'นางสาวธนภรณ์ ขมิ้นขาว' }, { id: '815043', name: 'นางสาวพัชริดา สวยดี' },
+            { id: '900094', name: 'นางสาวปทมพรรณ อนงค์ทอง' }, { id: '900095', name: 'นางสาวบุษบา ตาตะยานนท์' },
+            { id: '900720', name: 'นางสาวจรัญญา โชคยศเจริญ' }, { id: '901045', name: 'นางสาวอรณี ปาปะภา' },
+            { id: '901538', name: 'นางสาวลภิสรา ดำรงศักดิ์' }, { id: '813727', name: 'นางบุษบากร สุขวารี' },
+            { id: '813208', name: 'นางมุกดา พ่อค้า' }, { id: '813277', name: 'นางสาวหนึ่งฤทัย เย็นจิระ' },
+            { id: 'RETURN_RCV', name: 'ผู้รับชิ้นเนื้อคืน (ระบุชื่อเพิ่มเติม)' } // ตัวเลือกใหม่
+        ];
+
+        const doctors = [
+            "นพ. วิสุทธิ์ ล้ำเลิศธน", "นพ. ธีรภัทร อึ้งตระกูล", "นพ. ชุมอรรจน์ พันธ์เณร", 
+            "พญ. ประคองบุญ สังฆสุบรรณ", "พญ. อัจฉรา สุภาวเวช", "พญ. ชญานี สำแดงปั้น", 
+            "นพ. ศิวัช ศักดิ์เดชยนต์", "นพ. ธนกร เจริญธนดล", "พญ. ศศิพร สวัสดิสาระ", 
+            "พญ. วลัยพรรณ ตันติยวรงค์", "พญ. จอมธนา ศิริไพบูลย์", "พญ. ปิยะรัตน์ ลิมปวิทยากุล", 
+            "นพ. วรวิทย์ ชัยวิริยะวงค์", "แพทย์อื่นๆ (โปรดระบุ)"
+        ];
+
+        const labCompanies = ["AMGEN", "Astra zaneka", "BMG", "BGI", "K-track", "อื่นๆ (โปรดระบุ)"];
+        const testTypes = ["swift lung", "PDL1", "ACT onco", "oncoSNAP Nonet", "Claudin18.2", "BRCA", "All RAS", "BRAF", "EGFR T790", "MMR", "อื่นๆ (โปรดระบุ)"];
+
+        // --- Helper Functions ---
+        const parseThaiDate = (str) => {
+            if (!str) return 0;
+            try {
+                const parts = str.replace(',', '').split(' ');
+                if (parts.length < 2) return 0;
+                const [d, m, y] = parts[0].split('/');
+                const [hr, min, sec] = parts[1].split(':');
+                const year = parseInt(y) > 2500 ? parseInt(y) - 543 : parseInt(y);
+                return new Date(year, parseInt(m)-1, parseInt(d), parseInt(hr), parseInt(min), parseInt(sec)).getTime();
+            } catch(e) { return 0; }
+        };
+
+        const formatTAT = (ms) => {
+            if (ms === 0 || isNaN(ms)) return "-";
+            const totalHours = ms / (1000 * 60 * 60);
+            if (totalHours < 24) return `${totalHours.toFixed(1)} ชม.`;
+            const days = Math.floor(totalHours / 24);
+            const hrs = (totalHours % 24).toFixed(0);
+            return `${days} วัน ${hrs > 0 ? hrs + ' ชม.' : ''}`;
+        };
+
+        // --- Main App Component ---
+        function App() {
+            const [user, setUser] = useState(null);
+            const [specimens, setSpecimens] = useState([]);
+            const [currentView, setCurrentView] = useState('dashboard');
+            const [dbError, setDbError] = useState(false);
+
+            useEffect(() => {
+                if (!db) { setDbError(true); return; }
+                const unsubscribe = db.collection("specimens").orderBy("createdAt", "desc").onSnapshot(
+                    (snapshot) => {
+                        const data = snapshot.docs.map(doc => ({ firebaseId: doc.id, ...doc.data() }));
+                        setSpecimens(data);
+                    },
+                    (error) => { console.error("Firebase Error:", error); setDbError(true); }
+                );
+                return () => unsubscribe();
+            }, []);
+
+            const handleSetUser = (userData) => {
+                setUser(userData);
+                if (userData) {
+                    if (userData.role === 'doctor') setCurrentView('search');
+                    else if (userData.role === 'messenger') setCurrentView('pickup');
+                    else setCurrentView('dashboard');
+                }
+            };
+
+            if (!user) return <LoginScreen onLogin={handleSetUser} />;
+            
+            const isMessenger = user.role === 'messenger';
+            const isDoctor = user.role === 'doctor';
+            const isNurse = user.role === 'nurse';
+
+            return (
+                <div className="flex h-screen overflow-hidden bg-gray-100">
+                    <div className="w-64 bg-blue-900 text-white flex flex-col">
+                        <div className="p-5 font-bold text-xl border-b border-blue-800 text-center flex flex-col items-center">
+                            <i className="fa-solid fa-microscope text-3xl mb-2 text-blue-300"></i>
+                            <span>PathoTrack Pro</span>
+                        </div>
+                        <div className="p-4 bg-blue-800 text-sm">
+                            <p className="text-blue-200">เข้าสู่ระบบโดย:</p>
+                            <p className="font-bold">{user.name}</p>
+                            <p className="text-xs text-blue-300">Role: {isNurse ? 'เจ้าหน้าที่พยาบาล' : isDoctor ? 'แพทย์ผู้ส่งตรวจ' : `Messenger (${user.lab})`}</p>
+                        </div>
+                        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+                            {isNurse && (
+                                <>
+                                    <NavItem icon="fa-chart-pie" label="แดชบอร์ด & สถิติ" active={currentView === 'dashboard'} onClick={() => setCurrentView('dashboard')} />
+                                    <NavItem icon="fa-plus-circle" label="ลงทะเบียนส่งตรวจ" active={currentView === 'register'} onClick={() => setCurrentView('register')} />
+                                    <NavItem icon="fa-vial" label="ห้องเจาะเลือด" active={currentView === 'blood_draw'} onClick={() => setCurrentView('blood_draw')} />
+                                </>
+                            )}
+                            {(isNurse || isMessenger) && (
+                                <NavItem icon="fa-truck" label="Messenger รับของ" active={currentView === 'pickup'} onClick={() => setCurrentView('pickup')} />
+                            )}
+                            {isNurse && (
+                                <>
+                                    <NavItem icon="fa-file-medical" label="รับผลตรวจ" active={currentView === 'result'} onClick={() => setCurrentView('result')} />
+                                    <NavItem icon="fa-box-open" label="จัดการของส่งคืน" active={currentView === 'return'} onClick={() => setCurrentView('return')} />
+                                    <NavItem icon="fa-hand-holding-medical" label="ชิ้นเนื้อรอส่งคืน" active={currentView === 'pending_return'} onClick={() => setCurrentView('pending_return')} />
+                                </>
+                            )}
+                            {(isNurse || isDoctor) && (
+                                <NavItem icon="fa-search" label="ค้นหา & ติดตามสถานะ" active={currentView === 'search'} onClick={() => setCurrentView('search')} />
+                            )}
+                        </nav>
+                        <div className="p-4 border-t border-blue-800">
+                            <button onClick={() => setUser(null)} className="w-full py-2 px-4 bg-red-600 hover:bg-red-700 rounded text-white transition font-bold shadow">
+                                <i className="fa-solid fa-sign-out-alt mr-2"></i> ออกจากระบบ
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 overflow-auto p-8 relative">
+                        {dbError && (
+                            <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4" role="alert">
+                                <p className="font-bold">เชื่อมต่อฐานข้อมูลขัดข้อง (Permission Denied)</p>
+                            </div>
+                        )}
+                        {currentView === 'dashboard' && isNurse && <Dashboard specimens={specimens} />}
+                        {currentView === 'register' && isNurse && <RegisterScreen db={db} user={user} />}
+                        {currentView === 'blood_draw' && isNurse && <BloodDrawScreen db={db} specimens={specimens} user={user} />}
+                        {currentView === 'pickup' && (isNurse || isMessenger) && <PickupScreen db={db} specimens={specimens} user={user} />}
+                        {currentView === 'result' && isNurse && <ResultScreen db={db} specimens={specimens} user={user} />}
+                        {currentView === 'return' && isNurse && <ReturnScreen db={db} specimens={specimens} user={user} />}
+                        {currentView === 'pending_return' && isNurse && <PendingReturnScreen db={db} specimens={specimens} user={user} />}
+                        {currentView === 'search' && (isNurse || isDoctor) && <SearchScreen db={db} specimens={specimens} user={user} />}
+                    </div>
+                </div>
+            );
+        }
+
+        function NavItem({ icon, label, active, onClick }) {
+            return (
+                <button onClick={onClick} className={`w-full text-left px-4 py-3 rounded flex items-center transition ${active ? 'bg-blue-600 shadow-md text-white' : 'hover:bg-blue-800 text-blue-100'}`}>
+                    <i className={`fa-solid ${icon} w-6 text-center mr-2`}></i> {label}
+                </button>
+            );
+        }
+
+        // --- Screen: Login ---
+        function LoginScreen({ onLogin }) {
+            const [role, setRole] = useState('nurse');
+            const [selectedEmpIndex, setSelectedEmpIndex] = useState(0);
+            const [customNurseName, setCustomNurseName] = useState(''); // สำหรับผู้รับชิ้นเนื้อคืน
+            const [nursePassword, setNursePassword] = useState(''); // รหัสผ่านเจ้าหน้าที่
+            const [selectedDocIndex, setSelectedDocIndex] = useState(0);
+            const [lab, setLab] = useState('AMGEN');
+            const [otherLab, setOtherLab] = useState(''); 
+
+            const handleLogin = (e) => {
+                e.preventDefault();
+                if (role === 'nurse') {
+                    // ตรวจสอบรหัสผ่าน 2605
+                    if (nursePassword !== '2605') {
+                        alert('รหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง');
+                        return;
+                    }
+
+                    const emp = employees[selectedEmpIndex];
+                    let finalName = emp.name;
+                    
+                    if (emp.id === 'RETURN_RCV') {
+                        if (!customNurseName.trim()) {
+                            alert('กรุณาระบุชื่อผู้รับชิ้นเนื้อคืน');
+                            return;
+                        }
+                        finalName = `ผู้รับชิ้นเนื้อคืน (${customNurseName})`;
+                    }
+                    
+                    onLogin({ id: emp.id, name: finalName, role: 'nurse', lab: null });
+                } else if (role === 'doctor') {
+                    const doc = doctors[selectedDocIndex];
+                    onLogin({ id: 'DOC', name: doc, role: 'doctor', lab: null });
+                } else {
+                    const finalLab = lab === 'อื่นๆ (โปรดระบุ)' ? otherLab : lab;
+                    onLogin({ id: 'MSG', name: 'พนักงานรับ-ส่ง', role: 'messenger', lab: finalLab });
+                }
+            };
+
+            return (
+                <div className="min-h-screen flex items-center justify-center bg-gray-200">
+                    <div className="bg-white p-8 rounded-xl shadow-xl w-full max-w-md border-t-8 border-blue-900">
+                        <div className="text-center mb-6">
+                            <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4"><i className="fa-solid fa-microscope text-3xl"></i></div>
+                            <h1 className="text-3xl font-bold text-gray-800 tracking-tight">PathoTrack Pro</h1>
+                        </div>
+                        <form onSubmit={handleLogin} className="space-y-5">
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-1">สถานะผู้ใช้งาน (Role)</label>
+                                <select value={role} onChange={e => {setRole(e.target.value); setNursePassword('');}} className="w-full border-2 border-gray-200 rounded-lg p-3 focus:ring-blue-500 focus:border-blue-500 text-gray-800">
+                                    <option value="nurse">เจ้าหน้าที่โรงพยาบาล (พยาบาล)</option>
+                                    <option value="doctor">แพทย์ผู้ส่งตรวจ (ค้นหาข้อมูล)</option>
+                                    <option value="messenger">พนักงานรับ-ส่ง (Messenger บริษัท)</option>
+                                </select>
+                            </div>
+                            
+                            {role === 'nurse' && (
+                                <div className="animate-pop space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-700 mb-1">เลือกชื่อผู้ใช้งาน (เจ้าหน้าที่)</label>
+                                        <select value={selectedEmpIndex} onChange={e => setSelectedEmpIndex(e.target.value)} className="w-full border-2 border-gray-200 rounded-lg p-3">
+                                            {employees.map((emp, index) => <option key={emp.id} value={index}>{emp.id === 'RETURN_RCV' ? '' : emp.id + ' - '} {emp.name}</option>)}
+                                        </select>
+                                    </div>
+                                    
+                                    {/* แสดงช่องกรอกชื่อหากเลือก ผู้รับชิ้นเนื้อคืน */}
+                                    {employees[selectedEmpIndex].id === 'RETURN_RCV' && (
+                                        <div className="animate-pop">
+                                            <label className="block text-sm font-bold text-gray-700 mb-1">ระบุชื่อ-นามสกุล ผู้รับชิ้นเนื้อคืน</label>
+                                            <input type="text" required placeholder="กรอกชื่อ-นามสกุล..." value={customNurseName} onChange={e => setCustomNurseName(e.target.value)} className="w-full border-2 border-blue-300 rounded-lg p-3 bg-blue-50 focus:ring-blue-500 focus:border-blue-500" />
+                                        </div>
+                                    )}
+
+                                    {/* รหัสผ่านสำหรับเจ้าหน้าที่ */}
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-700 mb-1">รหัสผ่านเข้าใช้งาน (PIN)</label>
+                                        <input type="password" required placeholder="กรอกรหัสผ่าน 4 หลัก" value={nursePassword} onChange={e => setNursePassword(e.target.value)} className="w-full border-2 border-gray-200 rounded-lg p-3 focus:ring-blue-500 focus:border-blue-500" />
+                                    </div>
+                                </div>
+                            )}
+
+                            {role === 'doctor' && (
+                                <div className="animate-pop">
+                                    <label className="block text-sm font-bold text-gray-700 mb-1">เลือกชื่อแพทย์</label>
+                                    <select value={selectedDocIndex} onChange={e => setSelectedDocIndex(e.target.value)} className="w-full border-2 border-gray-200 rounded-lg p-3">
+                                        {doctors.map((doc, index) => <option key={index} value={index}>{doc}</option>)}
+                                    </select>
+                                </div>
+                            )}
+
+                            {role === 'messenger' && (
+                                <div className="animate-pop">
+                                    <label className="block text-sm font-bold text-gray-700 mb-1">เลือกบริษัทรับส่ง (Lab)</label>
+                                    <select value={lab} onChange={e => setLab(e.target.value)} className="w-full border-2 border-gray-200 rounded-lg p-3">
+                                        {labCompanies.map(l => <option key={l} value={l}>{l}</option>)}
+                                    </select>
+                                    {lab === 'อื่นๆ (โปรดระบุ)' && (
+                                        <input type="text" required placeholder="ระบุชื่อบริษัทของคุณ..." value={otherLab} onChange={e => setOtherLab(e.target.value)} className="w-full border-2 border-yellow-400 rounded-lg p-3 mt-3 bg-yellow-50 focus:ring-yellow-500" />
+                                    )}
+                                </div>
+                            )}
+                            <button type="submit" className="w-full bg-blue-700 text-white font-bold py-4 px-4 rounded-lg hover:bg-blue-800 mt-6 shadow-lg text-lg transition">เข้าสู่ระบบ</button>
+                        </form>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- Screen: Dashboard ---
+        function Dashboard({ specimens }) {
+            const [viewMode, setViewMode] = useState('active'); // 'active' | 'all'
+
+            // ข้อมูลสำหรับกล่องสถิติ (อิงจากที่ยังไม่ยกเลิก)
+            const nonCancelled = specimens.filter(s => !s.status.includes('ยกเลิก'));
+            const waitingDraw = nonCancelled.filter(s => s.status === 'รอเจาะเลือด').length;
+            const waitingPickup = nonCancelled.filter(s => s.status === 'รอรับสิ่งส่งตรวจ').length;
+            const waitingResult = nonCancelled.filter(s => s.status === 'มารับแล้ว').length;
+            const waitingReturn = nonCancelled.filter(s => s.status === 'รับผลกลับมาแล้ว').length;
+            const waitingGiveBack = nonCancelled.filter(s => s.status === 'รอส่งคืนผู้ป่วย' || s.status === 'รอญาติรับคืน').length;
+            const finished = nonCancelled.filter(s => s.status.includes('เสร็จสิ้น')).length;
+
+            // ข้อมูลสำหรับตารางแสดงผล
+            const ongoingSpecs = nonCancelled.filter(s => !s.status.includes('เสร็จสิ้น'));
+            const displayedSpecs = viewMode === 'active' ? ongoingSpecs : specimens;
+
+            // การคำนวณสถิติประสิทธิภาพ (Analytics)
+            const completedSpecs = nonCancelled.filter(s => s.status.includes('เสร็จสิ้น') || s.status === 'รับผลกลับมาแล้ว' || s.status === 'รอส่งคืนผู้ป่วย' || s.status === 'รอญาติรับคืน');
+            const labStats = {};
+            const typeStats = {};
+
+            completedSpecs.forEach(s => {
+                const lab = s.labCompany;
+                const type = s.testType;
+                
+                if (!labStats[lab]) labStats[lab] = { count: 0, totalTat: 0, tatCount: 0 };
+                if (!typeStats[type]) typeStats[type] = { count: 0, totalTat: 0, tatCount: 0 };
+                
+                labStats[lab].count += 1;
+                typeStats[type].count += 1;
+
+                const pickupLog = s.logs.find(l => l.status === 'มารับแล้ว');
+                const resultLog = s.logs.find(l => l.status.includes('รับผลกลับ') || l.status.includes('รับผลตรวจเลือด'));
+                
+                if (pickupLog && resultLog) {
+                    const t1 = pickupLog.timestampMs || parseThaiDate(pickupLog.timestamp);
+                    const t2 = resultLog.timestampMs || parseThaiDate(resultLog.timestamp);
+                    if (t1 && t2 && t2 >= t1) {
+                        const diff = t2 - t1;
+                        labStats[lab].totalTat += diff;
+                        labStats[lab].tatCount += 1;
+                        typeStats[type].totalTat += diff;
+                        typeStats[type].tatCount += 1;
+                    }
+                }
+            });
+
+            return (
+                <div>
+                    <h2 className="text-2xl font-bold mb-6 text-gray-800">แดชบอร์ดสถิติภาพรวม</h2>
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+                        <StatCard title="รอเจาะเลือด" value={waitingDraw} icon="fa-vial" color="bg-red-500" />
+                        <StatCard title="รอรับของ" value={waitingPickup} icon="fa-clock" color="bg-yellow-500" />
+                        <StatCard title="รอผล Lab" value={waitingResult} icon="fa-truck-fast" color="bg-blue-500" />
+                        <StatCard title="รอจัดการกลับ" value={waitingReturn} icon="fa-inbox" color="bg-purple-500" />
+                        <StatCard title="รอส่งคืนญาติ" value={waitingGiveBack} icon="fa-hand-holding-medical" color="bg-orange-500" />
+                        <StatCard title="เรียบร้อย" value={finished} icon="fa-check-circle" color="bg-green-500" />
+                    </div>
+
+                    {/* ตารางแสดงผู้ป่วย */}
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-8">
+                        <div className="bg-gray-50 border-b flex gap-6 px-6 pt-4">
+                            <button onClick={() => setViewMode('active')} className={`font-bold pb-3 border-b-4 transition ${viewMode === 'active' ? 'text-blue-700 border-blue-600' : 'text-gray-500 border-transparent hover:text-gray-700'}`}>
+                                <i className="fa-solid fa-spinner mr-2"></i> รายการที่กำลังดำเนินการ
+                            </button>
+                            <button onClick={() => setViewMode('all')} className={`font-bold pb-3 border-b-4 transition ${viewMode === 'all' ? 'text-blue-700 border-blue-600' : 'text-gray-500 border-transparent hover:text-gray-700'}`}>
+                                <i className="fa-solid fa-users mr-2"></i> ผู้ป่วยทั้งหมดในระบบ
+                            </button>
+                        </div>
+                        <div className="overflow-x-auto p-4">
+                            <table className="min-w-full text-sm">
+                                <thead className="text-left text-gray-500 bg-gray-50 uppercase text-xs">
+                                    <tr>
+                                        <th className="p-3">HN</th>
+                                        <th className="p-3">ชื่อ-นามสกุล</th>
+                                        <th className="p-3">ประเภท</th>
+                                        <th className="p-3">บริษัท (Lab)</th>
+                                        <th className="p-3">สถานะปัจจุบัน</th>
+                                        <th className="p-3">วันที่ลงทะเบียน</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {displayedSpecs.length === 0 ? <tr><td colSpan="6" className="text-center py-8 text-gray-400">ไม่มีข้อมูลรายการ</td></tr> :
+                                        displayedSpecs.map(s => (
+                                            <tr key={s.id} className="hover:bg-blue-50 transition">
+                                                <td className="p-3">{s.hn}</td>
+                                                <td className="p-3 font-bold text-gray-800">{s.patientName}</td>
+                                                <td className="p-3"><span className={`px-2 py-0.5 rounded text-white text-[10px] mr-1 ${s.category==='เลือด'?'bg-red-500':'bg-yellow-500'}`}>{s.category}</span> {s.testType}</td>
+                                                <td className="p-3">{s.labCompany}</td>
+                                                <td className="p-3">
+                                                    <span className={`px-2 py-1 rounded font-bold text-[11px] ${s.status.includes('ยกเลิก') ? 'bg-red-100 text-red-700' : s.status.includes('เสร็จสิ้น') ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                                                        {s.status}
+                                                    </span>
+                                                </td>
+                                                <td className="p-3 text-gray-500">{new Date(s.createdAt).toLocaleString('th-TH', {dateStyle: 'short', timeStyle: 'short'})}</td>
+                                            </tr>
+                                        ))
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <h2 className="text-xl font-bold mb-4 text-gray-800"><i className="fa-solid fa-chart-line text-blue-600 mr-2"></i>รายงานประสิทธิภาพการส่งตรวจ (เฉพาะรายการที่เสร็จสิ้น)</h2>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                            <div className="bg-blue-50 p-4 border-b font-bold text-blue-800">ประสิทธิภาพแยกตามบริษัท (Lab)</div>
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full">
+                                    <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+                                        <tr><th className="px-6 py-3 text-left">บริษัท</th><th className="px-6 py-3 text-center">ส่งตรวจ (เคส)</th><th className="px-6 py-3 text-right">ระยะเวลารอผลเฉลี่ย (TAT)</th></tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-200">
+                                        {Object.keys(labStats).length === 0 ? <tr><td colSpan="3" className="p-6 text-center text-gray-400">ยังไม่มีข้อมูลที่เสร็จสิ้น</td></tr> : 
+                                            Object.keys(labStats).sort((a,b) => labStats[b].count - labStats[a].count).map(lab => {
+                                                const stat = labStats[lab];
+                                                const avgTat = stat.tatCount > 0 ? stat.totalTat / stat.tatCount : 0;
+                                                return (
+                                                    <tr key={lab} className="hover:bg-gray-50">
+                                                        <td className="px-6 py-4 font-bold text-gray-800">{lab}</td>
+                                                        <td className="px-6 py-4 text-center">{stat.count}</td>
+                                                        <td className="px-6 py-4 text-right text-blue-600 font-bold">{formatTAT(avgTat)}</td>
+                                                    </tr>
+                                                )
+                                            })
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                            <div className="bg-green-50 p-4 border-b font-bold text-green-800">ประสิทธิภาพแยกตามชนิดการตรวจ (Test Type)</div>
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full">
+                                    <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+                                        <tr><th className="px-6 py-3 text-left">ชนิดการตรวจ</th><th className="px-6 py-3 text-center">ส่งตรวจ (เคส)</th><th className="px-6 py-3 text-right">ระยะเวลารอผลเฉลี่ย (TAT)</th></tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-200">
+                                        {Object.keys(typeStats).length === 0 ? <tr><td colSpan="3" className="p-6 text-center text-gray-400">ยังไม่มีข้อมูลที่เสร็จสิ้น</td></tr> : 
+                                            Object.keys(typeStats).sort((a,b) => typeStats[b].count - typeStats[a].count).map(type => {
+                                                const stat = typeStats[type];
+                                                const avgTat = stat.tatCount > 0 ? stat.totalTat / stat.tatCount : 0;
+                                                return (
+                                                    <tr key={type} className="hover:bg-gray-50">
+                                                        <td className="px-6 py-4 font-bold text-gray-800">{type}</td>
+                                                        <td className="px-6 py-4 text-center">{stat.count}</td>
+                                                        <td className="px-6 py-4 text-right text-green-600 font-bold">{formatTAT(avgTat)}</td>
+                                                    </tr>
+                                                )
+                                            })
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+        function StatCard({ title, value, icon, color }) {
+            return (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex flex-col items-center justify-center text-center">
+                    <div className={`${color} w-10 h-10 rounded-full flex items-center justify-center text-white text-lg mb-2`}><i className={`fa-solid ${icon}`}></i></div>
+                    <p className="text-2xl font-bold text-gray-800">{value}</p>
+                    <p className="text-gray-500 text-xs font-medium whitespace-nowrap">{title}</p>
+                </div>
+            );
+        }
+
+        // --- Screen: Register ---
+        function RegisterScreen({ db, user }) {
+            const [formData, setFormData] = useState({ 
+                hn: '', name: '', doctor: doctors[0], otherDoctor: '',
+                category: 'ชิ้นเนื้อ', type: testTypes[0], otherType: '', lab: labCompanies[0], otherLab: '' 
+            });
+            const [isSubmitting, setIsSubmitting] = useState(false);
+            const [showSuccessModal, setShowSuccessModal] = useState(false);
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                if (!db || isSubmitting) return;
+                setIsSubmitting(true);
+
+                const now = new Date().toLocaleString('th-TH');
+                const ms = Date.now(); 
+                const shortId = Math.floor(Math.random() * 90000) + 10000;
+                const newId = `TRK-${shortId}`;
+                
+                const finalDoctor = formData.doctor === 'แพทย์อื่นๆ (โปรดระบุ)' ? formData.otherDoctor : formData.doctor;
+                const finalType = formData.type === 'อื่นๆ (โปรดระบุ)' ? formData.otherType : formData.type;
+                const finalLab = formData.lab === 'อื่นๆ (โปรดระบุ)' ? formData.otherLab : formData.lab;
+                
+                const initialStatus = formData.category === 'เลือด' ? 'รอเจาะเลือด' : 'รอรับสิ่งส่งตรวจ';
+
+                const newSpecimen = {
+                    id: newId, hn: formData.hn, patientName: formData.name, doctor: finalDoctor,
+                    category: formData.category, testType: finalType, labCompany: finalLab, 
+                    status: initialStatus, createdAt: ms,
+                    logs: [{ status: initialStatus, timestamp: now, timestampMs: ms, by: `${user.name} (${user.id})` }]
+                };
+                
+                try {
+                    await db.collection("specimens").add(newSpecimen);
+                    setFormData({ hn: '', name: '', doctor: doctors[0], otherDoctor: '', category: 'ชิ้นเนื้อ', type: testTypes[0], otherType: '', lab: labCompanies[0], otherLab: '' });
+                    setShowSuccessModal(true);
+                } catch(err) {
+                    alert("เกิดข้อผิดพลาดในการบันทึก");
+                } finally {
+                    setIsSubmitting(false);
+                }
+            };
+
+            return (
+                <div className="max-w-4xl mx-auto relative">
+                    {showSuccessModal && (
+                        <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
+                            <div className="bg-white p-8 rounded-xl shadow-2xl flex flex-col items-center animate-pop max-w-sm w-full">
+                                <div className="w-20 h-20 bg-green-100 text-green-500 rounded-full flex items-center justify-center text-4xl mb-4">
+                                    <i className="fa-solid fa-check"></i>
+                                </div>
+                                <h3 className="text-2xl font-bold text-gray-800 mb-2">บันทึกสำเร็จ!</h3>
+                                <p className="text-gray-600 text-center mb-6">ข้อมูลคำสั่งตรวจถูกส่งเข้าระบบเรียบร้อยแล้ว</p>
+                                <button onClick={() => setShowSuccessModal(false)} className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700">ปิด</button>
+                            </div>
+                        </div>
+                    )}
+
+                    <h2 className="text-2xl font-bold mb-6 text-gray-800">ลงทะเบียนสิ่งส่งตรวจ</h2>
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8">
+                        <form onSubmit={handleSubmit} className="space-y-6">
+                            <div className="mb-6">
+                                <label className="block text-sm font-bold text-gray-700 mb-2">ประเภทสิ่งส่งตรวจ</label>
+                                <div className="flex gap-6">
+                                    <label className="flex items-center cursor-pointer">
+                                        <input type="radio" name="category" value="ชิ้นเนื้อ" checked={formData.category === 'ชิ้นเนื้อ'} onChange={e => setFormData({...formData, category: e.target.value})} className="mr-2" />
+                                        <span><i className="fa-solid fa-cube text-yellow-600 mr-1"></i> ชิ้นเนื้อ (Tissue)</span>
+                                    </label>
+                                    <label className="flex items-center cursor-pointer">
+                                        <input type="radio" name="category" value="เลือด" checked={formData.category === 'เลือด'} onChange={e => setFormData({...formData, category: e.target.value})} className="mr-2" />
+                                        <span><i className="fa-solid fa-droplet text-red-600 mr-1"></i> เลือด (Blood)</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">HN ผู้ป่วย</label>
+                                    <input type="text" required value={formData.hn} onChange={e => setFormData({...formData, hn: e.target.value})} className="w-full border-gray-300 border rounded-lg p-2" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">ชื่อ-นามสกุล ผู้ป่วย</label>
+                                    <input type="text" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full border-gray-300 border rounded-lg p-2" />
+                                </div>
+                            </div>
+                            
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-gray-700">แพทย์ผู้ส่งตรวจ</label>
+                                <select value={formData.doctor} onChange={e => setFormData({...formData, doctor: e.target.value})} className="w-full border-gray-300 border rounded-lg p-2">
+                                    {doctors.map(doc => <option key={doc} value={doc}>{doc}</option>)}
+                                </select>
+                                {formData.doctor === 'แพทย์อื่นๆ (โปรดระบุ)' && <input type="text" required placeholder="ระบุชื่อแพทย์..." value={formData.otherDoctor} onChange={e => setFormData({...formData, otherDoctor: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2 bg-yellow-50" />}
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-700">ชื่อการตรวจ</label>
+                                    <select value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})} className="w-full border-gray-300 border rounded-lg p-2">
+                                        {testTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                                    </select>
+                                    {formData.type === 'อื่นๆ (โปรดระบุ)' && <input type="text" required placeholder="โปรดระบุ..." value={formData.otherType} onChange={e => setFormData({...formData, otherType: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2 bg-yellow-50" />}
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-gray-700">บริษัทที่ส่งตรวจ (Lab)</label>
+                                    <select value={formData.lab} onChange={e => setFormData({...formData, lab: e.target.value})} className="w-full border-gray-300 border rounded-lg p-2">
+                                        {labCompanies.map(l => <option key={l} value={l}>{l}</option>)}
+                                    </select>
+                                    {formData.lab === 'อื่นๆ (โปรดระบุ)' && <input type="text" required placeholder="โปรดระบุ..." value={formData.otherLab} onChange={e => setFormData({...formData, otherLab: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2 bg-yellow-50" />}
+                                </div>
+                            </div>
+                            <div className="pt-4 border-t border-gray-100 text-right mt-6">
+                                <button type="submit" disabled={isSubmitting} className={`w-full md:w-auto font-bold py-3 px-8 rounded-lg shadow text-white ${isSubmitting ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                                    {isSubmitting ? <><i className="fa-solid fa-spinner fa-spin mr-2"></i> กำลังบันทึก...</> : <><i className="fa-solid fa-save mr-2"></i> บันทึกคำสั่งการตรวจ</>}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- Screen: Blood Draw ---
+        function BloodDrawScreen({ db, specimens, user }) {
+            const pendingDraws = specimens.filter(s => s.status === 'รอเจาะเลือด');
+            const action = async (id) => {
+                const s = specimens.find(x=>x.firebaseId===id);
+                await db.collection("specimens").doc(id).update({ status: 'รอรับสิ่งส่งตรวจ', logs: [...s.logs, { status: 'เจาะเลือดเรียบร้อย (พร้อมรับ)', timestamp: new Date().toLocaleString('th-TH'), timestampMs: Date.now(), by: user.name }] });
+            };
+            return (
+                <div><h2 className="text-2xl font-bold mb-6 text-gray-800"><i className="fa-solid fa-vial text-red-500 mr-2"></i>ห้องเจาะเลือด</h2>
+                <div className="bg-white rounded-xl shadow-sm border overflow-hidden"><table className="min-w-full"><tbody className="divide-y">
+                    {pendingDraws.length===0?<tr><td className="p-10 text-center text-gray-500">ไม่มีคิว</td></tr> : pendingDraws.map(s => (
+                        <tr key={s.id} className="p-4 flex flex-col md:flex-row justify-between md:items-center px-6 hover:bg-gray-50">
+                            <div className="mb-3 md:mb-0"><p className="font-bold">{s.patientName} ({s.hn})</p><p className="text-sm text-red-600 font-bold">{s.testType}</p></div>
+                            <button onClick={()=>action(s.firebaseId)} className="bg-red-500 text-white px-4 py-2 rounded shadow"><i className="fa-solid fa-syringe mr-2"></i>เจาะเลือดแล้ว</button>
+                        </tr>
+                    ))}
+                </tbody></table></div></div>
+            );
+        }
+
+        // --- Screen: Messenger Pickup ---
+        function PickupScreen({ db, specimens, user }) {
+            const isMsg = user.role === 'messenger';
+            const allLabsList = Array.from(new Set([
+                ...labCompanies.filter(l => l !== 'อื่นๆ (โปรดระบุ)'),
+                ...specimens.map(s => s.labCompany).filter(Boolean)
+            ]));
+            const [selectedLab, setSelectedLab] = useState(isMsg ? user.lab : allLabsList[0]);
+            const [receiverNames, setReceiverNames] = useState({});
+
+            const pending = specimens.filter(s => s.status === 'รอรับสิ่งส่งตรวจ' && s.labCompany === selectedLab);
+            const handleNameChange = (id, val) => setReceiverNames(prev => ({...prev, [id]: val}));
+
+            const action = async (id) => {
+                const receiver = receiverNames[id];
+                if (!receiver || !receiver.trim()) { alert("กรุณาระบุชื่อผู้รับของ ก่อนกดยืนยัน"); return; }
+                const s = specimens.find(x=>x.firebaseId===id);
+                const msgName = isMsg ? `${user.name} (${user.lab})` : `${user.name} (ยืนยันแทน MSG)`;
+                const noteStr = `ชื่อผู้รับของ: ${receiver}`;
+
+                await db.collection("specimens").doc(id).update({ 
+                    status: 'มารับแล้ว', 
+                    logs: [...s.logs, { status: 'มารับแล้ว', timestamp: new Date().toLocaleString('th-TH'), timestampMs: Date.now(), by: msgName, note: noteStr }] 
+                });
+            };
+
+            const handleDelete = async (id) => {
+                if(window.confirm("ยืนยันการลบข้อมูลนี้ออกจากระบบถาวร? (ใช้เฉพาะกรณีพยาบาลกรอกข้อมูลผิด/ซ้ำเท่านั้น)")) {
+                    await db.collection("specimens").doc(id).delete();
+                }
+            };
+
+            return (
+                <div>
+                    <div className="flex flex-col md:flex-row justify-between md:items-center mb-6">
+                        <h2 className="text-2xl font-bold mb-3 md:mb-0">ยืนยันรับสิ่งส่งตรวจ</h2>
+                        {!isMsg && (
+                            <div className="flex items-center">
+                                <span className="mr-2 font-bold text-gray-700">บริษัท:</span>
+                                <select value={selectedLab} onChange={e=>setSelectedLab(e.target.value)} className="border-2 border-blue-300 p-2 rounded-lg bg-blue-50 font-bold text-blue-800 w-full md:w-auto">
+                                    {allLabsList.map(l => <option key={l} value={l}>{l}</option>)}
+                                </select>
+                            </div>
+                        )}
+                    </div>
+                    
+                    <div className="bg-white rounded-xl shadow-sm border overflow-hidden"><table className="min-w-full"><tbody className="divide-y">
+                        {pending.length===0?<tr><td className="p-10 text-center text-gray-500">ไม่มีของรอรับ สำหรับบริษัท {selectedLab}</td></tr> : pending.map(s => (
+                            <tr key={s.id} className="p-4 flex flex-col md:flex-row justify-between md:items-center px-6 hover:bg-gray-50">
+                                <div className="mb-3 md:mb-0">
+                                    <p className="font-bold">{s.patientName} ({s.hn})</p>
+                                    <p className="text-sm text-gray-500"><span className={`px-2 py-0.5 rounded text-white text-xs mr-1 ${s.category==='เลือด'?'bg-red-500':'bg-yellow-500'}`}>{s.category}</span> {s.testType}</p>
+                                </div>
+                                <div className="flex flex-col md:flex-row gap-2 mt-2 md:mt-0 items-center">
+                                    <input type="text" placeholder="ระบุชื่อผู้รับ..." value={receiverNames[s.firebaseId] || ''} onChange={e => handleNameChange(s.firebaseId, e.target.value)} className="border-2 border-gray-300 p-2 rounded-lg text-sm w-full md:w-48 focus:border-blue-500" />
+                                    <button onClick={()=>action(s.firebaseId)} className="bg-green-600 text-white px-4 py-2 rounded shadow font-bold whitespace-nowrap"><i className="fa-solid fa-check mr-2"></i>มารับแล้ว</button>
+                                    {!isMsg && (
+                                        <button onClick={()=>handleDelete(s.firebaseId)} className="bg-red-50 text-red-600 border border-red-200 px-3 py-2 rounded shadow-sm font-bold whitespace-nowrap" title="ลบข้อมูล (กรอกผิด/ซ้ำ)"><i className="fa-solid fa-trash"></i></button>
+                                    )}
+                                </div>
+                            </tr>
+                        ))}
+                    </tbody></table></div>
+                </div>
+            );
+        }
+
+        // --- Screen: Result ---
+        function ResultScreen({ db, specimens, user }) {
+            const pending = specimens.filter(s => s.status === 'มารับแล้ว');
+            const action = async (id) => {
+                const s = specimens.find(x=>x.firebaseId===id);
+                const now = new Date().toLocaleString('th-TH');
+                const ms = Date.now();
+                
+                let nextStatus = 'รับผลกลับมาแล้ว';
+                let logStatus = 'รับผลกลับมาแล้ว';
+                
+                if (s.category === 'เลือด') {
+                    nextStatus = 'เสร็จสิ้น: รับผลตรวจเลือด';
+                    logStatus = 'เสร็จสิ้น: รับผลตรวจเลือด (ไม่มีสิ่งส่งตรวจต้องคืน)';
+                }
+
+                await db.collection("specimens").doc(id).update({ 
+                    status: nextStatus, 
+                    logs: [...s.logs, { status: logStatus, timestamp: now, timestampMs: ms, by: user.name }] 
+                });
+            };
+            
+            return (
+                <div><h2 className="text-2xl font-bold mb-6">บันทึกรับผลตรวจ</h2><div className="bg-white rounded-xl shadow border overflow-hidden"><table className="min-w-full"><tbody className="divide-y">
+                    {pending.length===0?<tr><td className="p-10 text-center text-gray-500">ไม่มีรายการรอรับผล</td></tr> : pending.map(s => (
+                        <tr key={s.id} className="p-4 flex flex-col md:flex-row justify-between md:items-center px-6 hover:bg-gray-50">
+                            <div className="mb-3 md:mb-0">
+                                <p className="font-bold">{s.patientName} ({s.hn})</p>
+                                <p className="text-sm text-gray-500 mt-1">
+                                    <span className={`px-2 py-0.5 rounded text-white text-xs mr-1 font-bold shadow-sm ${s.category==='เลือด'?'bg-red-500':'bg-yellow-600'}`}>{s.category}</span> 
+                                    ส่งที่: {s.labCompany}
+                                </p>
+                            </div>
+                            <button onClick={()=>action(s.firebaseId)} className={`px-4 py-2 rounded shadow text-white font-bold ${s.category==='เลือด'?'bg-green-600 hover:bg-green-700':'bg-blue-600 hover:bg-blue-700'}`}>
+                                {s.category==='เลือด' ? 'รับผล (เสร็จสิ้น)' : 'รับผลกลับมาแล้ว'}
+                            </button>
+                        </tr>
+                    ))}
+                </tbody></table></div></div>
+            );
+        }
+
+        // --- Screen: Return ---
+        function ReturnScreen({ db, specimens, user }) {
+            const pending = specimens.filter(s => s.status === 'รับผลกลับมาแล้ว');
+            const handleAction = async (firebaseId, actionType) => {
+                const s = specimens.find(x => x.firebaseId === firebaseId);
+                let nextStatus = actionType === 'patho' ? 'เสร็จสิ้น: เข้าคลัง Patho รพ.' : 'รอส่งคืนผู้ป่วย';
+
+                await db.collection("specimens").doc(firebaseId).update({ 
+                    status: nextStatus, 
+                    logs: [...s.logs, { status: nextStatus, timestamp: new Date().toLocaleString('th-TH'), timestampMs: Date.now(), by: user.name }] 
+                });
+            };
+
+            return (
+                <div>
+                    <h2 className="text-2xl font-bold mb-6 text-gray-800">จัดการของส่งคืน</h2>
+                    <div className="space-y-4">
+                        {pending.length === 0 ? <div className="p-10 text-center text-gray-500 bg-white rounded-xl border border-dashed">ไม่มีรายการรอจัดการคืน</div> : pending.map(s => (
+                            <div key={s.id} className="bg-white border rounded-lg p-5 flex flex-col md:flex-row justify-between md:items-center">
+                                <div className="mb-4 md:mb-0">
+                                    <span className="font-bold text-lg">{s.hn}</span> <span className="text-gray-600">{s.patientName}</span>
+                                    <p className="text-sm text-gray-500 mt-1">ประเภท: {s.category}</p>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button onClick={() => handleAction(s.firebaseId, 'patho')} className="bg-indigo-100 text-indigo-700 hover:bg-indigo-200 px-4 py-2 rounded font-bold text-sm">
+                                        <i className="fa-solid fa-box-archive mr-1"></i> เข้าคลัง Patho รพ.
+                                    </button>
+                                    <button onClick={() => handleAction(s.firebaseId, 'keep')} className="bg-orange-100 text-orange-700 hover:bg-orange-200 px-4 py-2 rounded font-bold text-sm">
+                                        <i className="fa-solid fa-building mr-1"></i> เก็บที่หน่วยงาน
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
+        // --- Screen: Pending Return ---
+        function PendingReturnScreen({ db, specimens, user }) {
+            const pending = specimens.filter(s => s.status === 'รอส่งคืนผู้ป่วย' || s.status === 'รอญาติรับคืน');
+            const [modalData, setModalData] = useState(null); 
+            const [relName, setRelName] = useState('');
+            const [relPhone, setRelPhone] = useState('');
+            const [relWish, setRelWish] = useState('รับคืน'); 
+
+            const handleComplete = async (firebaseId) => {
+                const s = specimens.find(x => x.firebaseId === firebaseId);
+                await db.collection("specimens").doc(firebaseId).update({ 
+                    status: 'เสร็จสิ้น: คืนแล้ว', 
+                    logs: [...s.logs, { status: 'เสร็จสิ้น: ส่งคืนผู้ป่วย/ญาติ แล้ว', timestamp: new Date().toLocaleString('th-TH'), timestampMs: Date.now(), by: user.name }] 
+                });
+            };
+
+            const submitDeceased = async () => {
+                if(!relName || !relPhone) return alert('กรุณากรอกชื่อและเบอร์โทรญาติให้ครบถ้วน');
+                const s = specimens.find(x => x.firebaseId === modalData);
+                
+                const noteDetail = `ติดต่อญาติ: ${relName} (${relPhone}) | ประสงค์: ${relWish}`;
+                let nextStatus = relWish === 'ทำลาย' ? 'เสร็จสิ้น: ทำลาย (ผู้ป่วยเสียชีวิต)' : 'รอญาติรับคืน';
+
+                await db.collection("specimens").doc(modalData).update({ 
+                    status: nextStatus, 
+                    logs: [...s.logs, { status: `รับทราบการเสียชีวิต (${relWish})`, note: noteDetail, timestamp: new Date().toLocaleString('th-TH'), timestampMs: Date.now(), by: user.name }] 
+                });
+                
+                setModalData(null); setRelName(''); setRelPhone(''); setRelWish('รับคืน');
+            };
+
+            return (
+                <div>
+                    <h2 className="text-2xl font-bold mb-4 text-gray-800">ชิ้นเนื้อรอส่งคืนผู้ป่วย/ญาติ</h2>
+                    <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6 flex items-start">
+                        <i className="fa-solid fa-triangle-exclamation mt-1 mr-3"></i>
+                        <div>
+                            <strong className="block font-bold">ประกาศสำคัญ:</strong>
+                            <span className="text-sm">กรณีผู้ป่วยเสียชีวิต ให้ติดต่อญาติเรื่องความประสงค์ "รับชิ้นเนื้อคืน" หรือ "ให้โรงพยาบาลทำลาย" และบันทึกข้อมูลในระบบทุกครั้ง</span>
+                        </div>
+                    </div>
+
+                    <div className="space-y-4">
+                        {pending.length === 0 ? <div className="p-10 text-center text-gray-500 bg-white rounded-xl border border-dashed">ไม่มีรายการรอส่งคืน</div> : pending.map(s => (
+                            <div key={s.id} className={`bg-white border-2 rounded-lg p-5 flex flex-col md:flex-row justify-between md:items-center ${s.status === 'รอญาติรับคืน' ? 'border-orange-300 bg-orange-50' : 'border-gray-200'}`}>
+                                <div className="mb-4 md:mb-0">
+                                    <span className="font-bold text-lg">{s.hn}</span> <span className="text-gray-800 font-bold">{s.patientName}</span>
+                                    <p className="text-sm text-gray-500 mt-1">
+                                        <span className={`px-2 py-0.5 rounded text-xs mr-2 font-bold ${s.status === 'รอญาติรับคืน' ? 'bg-orange-500 text-white' : 'bg-gray-200 text-gray-700'}`}>{s.status}</span>
+                                        {s.category}
+                                    </p>
+                                </div>
+                                <div className="flex gap-2">
+                                    {s.status !== 'รอญาติรับคืน' && (
+                                        <button onClick={() => setModalData(s.firebaseId)} className="bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300 px-4 py-2 rounded text-sm font-bold transition">
+                                            ผู้ป่วยเสียชีวิต
+                                        </button>
+                                    )}
+                                    <button onClick={() => handleComplete(s.firebaseId)} className="bg-green-500 hover:bg-green-600 text-white shadow px-4 py-2 rounded text-sm font-bold transition">
+                                        <i className="fa-solid fa-check mr-1"></i> ส่งคืนแล้วเสร็จ
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {modalData && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md animate-pop">
+                                <h3 className="text-xl font-bold text-gray-800 mb-2 border-b pb-2"><i className="fa-solid fa-file-signature mr-2"></i>บันทึกข้อมูลกรณีผู้ป่วยเสียชีวิต</h3>
+                                <div className="space-y-4 mt-4">
+                                    <div><label className="block text-sm font-bold mb-1">ชื่อญาติที่ติดต่อ</label><input type="text" required value={relName} onChange={e=>setRelName(e.target.value)} className="w-full border p-2 rounded" /></div>
+                                    <div><label className="block text-sm font-bold mb-1">เบอร์โทรศัพท์</label><input type="text" required value={relPhone} onChange={e=>setRelPhone(e.target.value)} className="w-full border p-2 rounded" /></div>
+                                    <div>
+                                        <label className="block text-sm font-bold mb-2">ความประสงค์</label>
+                                        <div className="flex gap-4">
+                                            <label className="flex items-center cursor-pointer p-2 border rounded flex-1"><input type="radio" value="รับคืน" checked={relWish==='รับคืน'} onChange={e=>setRelWish(e.target.value)} className="mr-2" /> <span>รับคืน</span></label>
+                                            <label className="flex items-center cursor-pointer p-2 border rounded flex-1"><input type="radio" value="ทำลาย" checked={relWish==='ทำลาย'} onChange={e=>setRelWish(e.target.value)} className="mr-2" /> <span>ทำลาย</span></label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="mt-6 flex justify-end gap-3"><button onClick={() => {setModalData(null); setRelWish('รับคืน')}} className="px-4 py-2 bg-gray-200 rounded font-bold">ยกเลิก</button><button onClick={submitDeceased} className="px-4 py-2 bg-blue-600 text-white rounded font-bold">บันทึก</button></div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // --- Screen: Search ---
+        function SearchScreen({ db, specimens, user }) {
+            const [query, setQuery] = useState('');
+            const [results, setResults] = useState([]); 
+            const [searched, setSearched] = useState(false);
+            
+            const [cancelId, setCancelId] = useState(null);
+            const [cancelReason, setCancelReason] = useState('');
+            const [showCancelModal, setShowCancelModal] = useState(false);
+
+            const handleSearch = (e) => {
+                e.preventDefault();
+                const found = specimens.filter(s => s.hn === query || s.patientName.includes(query) || s.id === query);
+                setResults(found);
+                setSearched(true);
+            };
+            
+            useEffect(() => {
+                if (searched && results.length > 0) {
+                    const updatedResults = results.map(r => {
+                        const updatedItem = specimens.find(s => s.firebaseId === r.firebaseId);
+                        return updatedItem || r;
+                    });
+                    setResults(updatedResults);
+                }
+            }, [specimens]);
+
+            const handleCancelSpecimen = async () => {
+                if (!cancelReason.trim()) return alert("โปรดระบุเหตุผล");
+                const s = specimens.find(x => x.firebaseId === cancelId);
+                const cancelStatus = `ยกเลิกการสั่งตรวจ`;
+                await db.collection("specimens").doc(cancelId).update({
+                    status: cancelStatus,
+                    logs: [...s.logs, { status: cancelStatus, timestamp: new Date().toLocaleString('th-TH'), timestampMs: Date.now(), by: user.name, note: cancelReason }]
+                });
+                setShowCancelModal(false); setCancelReason(''); setCancelId(null);
+            };
+
+            const handleDelete = async (id) => {
+                if(window.confirm("ยืนยันการลบข้อมูลนี้ออกจากระบบถาวร? (ใช้เฉพาะกรณีพยาบาลกรอกข้อมูลผิด/ซ้ำเท่านั้น)")) {
+                    await db.collection("specimens").doc(id).delete();
+                    setResults(results.filter(r => r.firebaseId !== id)); 
+                }
+            };
+
+            const canCancel = user.role === 'nurse';
+
+            return (
+                <div className="max-w-4xl mx-auto"><h2 className="text-2xl font-bold mb-6">ค้นหาและติดตามสถานะ</h2>
+                    <form onSubmit={handleSearch} className="mb-8 flex flex-col md:flex-row gap-2">
+                        <input type="text" value={query} onChange={e=>setQuery(e.target.value)} className="flex-1 px-4 py-4 border rounded-lg md:rounded-r-none md:rounded-l-lg" placeholder="ค้นหาด้วย HN, ชื่อ หรือ รหัส Tracking..." />
+                        <button type="submit" className="bg-blue-600 text-white px-8 py-4 rounded-lg md:rounded-l-none md:rounded-r-lg font-bold">ค้นหา</button>
+                    </form>
+                    
+                    {searched && results.length === 0 && <div className="bg-red-50 text-red-600 p-6 rounded-lg text-center border font-bold">ไม่พบข้อมูลในระบบ</div>}
+                    
+                    {results.map((result) => (
+                        <div key={result.firebaseId} className="bg-white rounded-xl shadow-md border overflow-hidden mb-6 animate-pop">
+                            <div className={`${result.status.includes('ยกเลิก') ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-100'} border-b p-6 flex flex-col md:flex-row justify-between items-start md:items-center`}>
+                                <div className="mb-4 md:mb-0">
+                                    <h3 className="text-2xl font-bold text-gray-800">
+                                        <i className={`fa-solid ${result.category === 'เลือด' ? 'fa-droplet text-red-500' : 'fa-cube text-yellow-600'} mr-2`}></i>
+                                        {result.patientName}
+                                    </h3>
+                                    <div className="text-gray-600 mt-2 flex flex-wrap gap-4 text-sm">
+                                        <span><i className="fa-solid fa-id-card mr-1"></i> HN: {result.hn}</span>
+                                        <span>ประเภท: {result.category}</span>
+                                        <span>แพทย์: {result.doctor}</span>
+                                        <span className="font-bold text-blue-700">ส่งตรวจ: {result.testType} ({result.labCompany})</span>
+                                    </div>
+                                </div>
+                                <div className="flex flex-col items-end gap-2 w-full md:w-auto">
+                                    <span className={`px-4 py-2 rounded-full text-sm font-bold border w-full md:w-auto text-center ${result.status.includes('ยกเลิก') ? 'bg-red-100 text-red-800' : result.status.includes('เสร็จสิ้น') ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
+                                        {result.status}
+                                    </span>
+                                    
+                                    <div className="flex flex-wrap justify-end gap-2 mt-2">
+                                        {canCancel && !result.status.includes('เสร็จสิ้น') && !result.status.includes('ยกเลิก') && (
+                                            <button onClick={() => { setCancelId(result.firebaseId); setShowCancelModal(true); }} className="bg-orange-50 text-orange-600 hover:bg-orange-100 border border-orange-200 px-3 py-1 rounded text-sm flex items-center font-bold">
+                                                <i className="fa-solid fa-ban mr-1"></i> ยกเลิกคำสั่ง
+                                            </button>
+                                        )}
+                                        {canCancel && (result.status === 'รอเจาะเลือด' || result.status === 'รอรับสิ่งส่งตรวจ') && (
+                                            <button onClick={() => handleDelete(result.firebaseId)} className="bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 px-3 py-1 rounded text-sm flex items-center font-bold">
+                                                <i className="fa-solid fa-trash mr-1"></i> ลบข้อมูล (กรอกผิด)
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="p-8 relative">
+                                {result.logs.map((log, idx) => (
+                                    <div key={idx} className="relative pl-12 py-4"><div className="absolute left-4 top-4 bottom-0 w-0.5 bg-gray-200"></div>
+                                    <div className={`absolute left-2.5 top-4 w-3.5 h-3.5 rounded-full z-10 ${log.status.includes('ยกเลิก') ? 'bg-red-500' : 'bg-blue-500'}`}></div>
+                                        <h5 className={`font-bold ${log.status.includes('ยกเลิก') ? 'text-red-600' : 'text-gray-800'}`}>{log.status}</h5>
+                                        {log.note && <div className="text-sm bg-yellow-50 text-yellow-800 p-2 rounded mt-2 inline-block shadow-sm"><i className="fa-solid fa-note-sticky mr-1"></i> {log.note}</div>}
+                                        <p className="text-sm text-gray-500 mt-1">{log.timestamp} | {log.by}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+
+                    {showCancelModal && (
+                        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-8 z-50">
+                            <div className="bg-white border-2 border-red-200 p-6 rounded-xl shadow-2xl w-full max-w-md animate-pop">
+                                <h3 className="text-xl font-bold text-red-600 mb-2">ยืนยันการยกเลิก?</h3>
+                                <textarea value={cancelReason} onChange={e => setCancelReason(e.target.value)} placeholder="ระบุเหตุผลในการยกเลิกคำสั่ง..." className="w-full border-gray-300 border rounded p-3 mb-4 h-24 focus:ring-red-500 focus:border-red-500"></textarea>
+                                <div className="flex gap-2 justify-end">
+                                    <button onClick={() => { setShowCancelModal(false); setCancelId(null); setCancelReason(''); }} className="px-4 py-2 bg-gray-200 rounded font-bold text-gray-700 hover:bg-gray-300">กลับ</button>
+                                    <button onClick={handleCancelSpecimen} className="px-4 py-2 bg-red-600 text-white rounded font-bold hover:bg-red-700 shadow">ยืนยันการยกเลิก</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
