@@ -4,13 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pathology & Blood Tracking System - Online</title>
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
+    <!-- Firebase SDK (Version 8) -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
 
@@ -56,7 +62,7 @@
             { id: '900720', name: 'นางสาวจรัญญา โชคยศเจริญ' }, { id: '901045', name: 'นางสาวอรณี ปาปะภา' },
             { id: '901538', name: 'นางสาวลภิสรา ดำรงศักดิ์' }, { id: '813727', name: 'นางบุษบากร สุขวารี' },
             { id: '813208', name: 'นางมุกดา พ่อค้า' }, { id: '813277', name: 'นางสาวหนึ่งฤทัย เย็นจิระ' },
-            { id: 'RETURN_RCV', name: 'ผู้รับชิ้นเนื้อคืน (ระบุชื่อเพิ่มเติม)' } // ตัวเลือกใหม่
+            { id: 'RETURN_RCV', name: 'ผู้รับชิ้นเนื้อคืน (ระบุชื่อเพิ่มเติม)' }
         ];
 
         const doctors = [
@@ -96,19 +102,33 @@
         function App() {
             const [user, setUser] = useState(null);
             const [specimens, setSpecimens] = useState([]);
+            const [holidays, setHolidays] = useState([]); 
+            const [repContacts, setRepContacts] = useState([]); // เก็บข้อมูลผู้แทน
             const [currentView, setCurrentView] = useState('dashboard');
             const [dbError, setDbError] = useState(false);
 
             useEffect(() => {
                 if (!db) { setDbError(true); return; }
-                const unsubscribe = db.collection("specimens").orderBy("createdAt", "desc").onSnapshot(
-                    (snapshot) => {
-                        const data = snapshot.docs.map(doc => ({ firebaseId: doc.id, ...doc.data() }));
-                        setSpecimens(data);
-                    },
+                
+                // ดึงข้อมูล Specimens
+                const unsubSpecs = db.collection("specimens").orderBy("createdAt", "desc").onSnapshot(
+                    (snapshot) => { setSpecimens(snapshot.docs.map(doc => ({ firebaseId: doc.id, ...doc.data() }))); },
                     (error) => { console.error("Firebase Error:", error); setDbError(true); }
                 );
-                return () => unsubscribe();
+
+                // ดึงข้อมูล Holidays
+                const unsubHols = db.collection("holidays").onSnapshot(
+                    (snapshot) => { setHolidays(snapshot.docs.map(doc => ({ firebaseId: doc.id, ...doc.data() }))); },
+                    (error) => { console.error("Firebase Error (Holidays):", error); }
+                );
+
+                // ดึงข้อมูล Rep Contacts
+                const unsubReps = db.collection("rep_contacts").orderBy("createdAt", "desc").onSnapshot(
+                    (snapshot) => { setRepContacts(snapshot.docs.map(doc => ({ firebaseId: doc.id, ...doc.data() }))); },
+                    (error) => { console.error("Firebase Error (Reps):", error); }
+                );
+
+                return () => { unsubSpecs(); unsubHols(); unsubReps(); };
             }, []);
 
             const handleSetUser = (userData) => {
@@ -128,7 +148,7 @@
 
             return (
                 <div className="flex h-screen overflow-hidden bg-gray-100">
-                    <div className="w-64 bg-blue-900 text-white flex flex-col">
+                    <div className="w-64 bg-blue-900 text-white flex flex-col shadow-xl z-20">
                         <div className="p-5 font-bold text-xl border-b border-blue-800 text-center flex flex-col items-center">
                             <i className="fa-solid fa-microscope text-3xl mb-2 text-blue-300"></i>
                             <span>PathoTrack Pro</span>
@@ -136,7 +156,9 @@
                         <div className="p-4 bg-blue-800 text-sm">
                             <p className="text-blue-200">เข้าสู่ระบบโดย:</p>
                             <p className="font-bold">{user.name}</p>
-                            <p className="text-xs text-blue-300">Role: {isNurse ? 'เจ้าหน้าที่พยาบาล' : isDoctor ? 'แพทย์ผู้ส่งตรวจ' : `Messenger (${user.lab})`}</p>
+                            <p className="text-xs text-blue-300 mt-1">
+                                <span className="bg-blue-700 px-2 py-0.5 rounded">{isNurse ? 'พยาบาล' : isDoctor ? 'แพทย์' : `MSG: ${user.lab}`}</span>
+                            </p>
                         </div>
                         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
                             {isNurse && (
@@ -169,12 +191,12 @@
 
                     <div className="flex-1 overflow-auto p-8 relative">
                         {dbError && (
-                            <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4" role="alert">
-                                <p className="font-bold">เชื่อมต่อฐานข้อมูลขัดข้อง (Permission Denied)</p>
+                            <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4 rounded-lg shadow-sm" role="alert">
+                                <p className="font-bold"><i className="fa-solid fa-triangle-exclamation mr-2"></i>เชื่อมต่อฐานข้อมูลขัดข้อง (Permission Denied)</p>
                             </div>
                         )}
-                        {currentView === 'dashboard' && isNurse && <Dashboard specimens={specimens} />}
-                        {currentView === 'register' && isNurse && <RegisterScreen db={db} user={user} />}
+                        {currentView === 'dashboard' && isNurse && <Dashboard specimens={specimens} holidays={holidays} repContacts={repContacts} db={db} user={user} />}
+                        {currentView === 'register' && isNurse && <RegisterScreen db={db} user={user} holidays={holidays} />}
                         {currentView === 'blood_draw' && isNurse && <BloodDrawScreen db={db} specimens={specimens} user={user} />}
                         {currentView === 'pickup' && (isNurse || isMessenger) && <PickupScreen db={db} specimens={specimens} user={user} />}
                         {currentView === 'result' && isNurse && <ResultScreen db={db} specimens={specimens} user={user} />}
@@ -198,8 +220,8 @@
         function LoginScreen({ onLogin }) {
             const [role, setRole] = useState('nurse');
             const [selectedEmpIndex, setSelectedEmpIndex] = useState(0);
-            const [customNurseName, setCustomNurseName] = useState(''); // สำหรับผู้รับชิ้นเนื้อคืน
-            const [nursePassword, setNursePassword] = useState(''); // รหัสผ่านเจ้าหน้าที่
+            const [customNurseName, setCustomNurseName] = useState(''); 
+            const [nursePassword, setNursePassword] = useState(''); 
             const [selectedDocIndex, setSelectedDocIndex] = useState(0);
             const [lab, setLab] = useState('AMGEN');
             const [otherLab, setOtherLab] = useState(''); 
@@ -207,7 +229,6 @@
             const handleLogin = (e) => {
                 e.preventDefault();
                 if (role === 'nurse') {
-                    // ตรวจสอบรหัสผ่าน 2605
                     if (nursePassword !== '2605') {
                         alert('รหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง');
                         return;
@@ -217,10 +238,7 @@
                     let finalName = emp.name;
                     
                     if (emp.id === 'RETURN_RCV') {
-                        if (!customNurseName.trim()) {
-                            alert('กรุณาระบุชื่อผู้รับชิ้นเนื้อคืน');
-                            return;
-                        }
+                        if (!customNurseName.trim()) { alert('กรุณาระบุชื่อผู้รับชิ้นเนื้อคืน'); return; }
                         finalName = `ผู้รับชิ้นเนื้อคืน (${customNurseName})`;
                     }
                     
@@ -235,10 +253,10 @@
             };
 
             return (
-                <div className="min-h-screen flex items-center justify-center bg-gray-200">
-                    <div className="bg-white p-8 rounded-xl shadow-xl w-full max-w-md border-t-8 border-blue-900">
+                <div className="min-h-screen flex items-center justify-center bg-gray-200 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]">
+                    <div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md border-t-8 border-blue-900 animate-pop">
                         <div className="text-center mb-6">
-                            <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4"><i className="fa-solid fa-microscope text-3xl"></i></div>
+                            <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner"><i className="fa-solid fa-microscope text-3xl"></i></div>
                             <h1 className="text-3xl font-bold text-gray-800 tracking-tight">PathoTrack Pro</h1>
                         </div>
                         <form onSubmit={handleLogin} className="space-y-5">
@@ -260,7 +278,6 @@
                                         </select>
                                     </div>
                                     
-                                    {/* แสดงช่องกรอกชื่อหากเลือก ผู้รับชิ้นเนื้อคืน */}
                                     {employees[selectedEmpIndex].id === 'RETURN_RCV' && (
                                         <div className="animate-pop">
                                             <label className="block text-sm font-bold text-gray-700 mb-1">ระบุชื่อ-นามสกุล ผู้รับชิ้นเนื้อคืน</label>
@@ -268,10 +285,9 @@
                                         </div>
                                     )}
 
-                                    {/* รหัสผ่านสำหรับเจ้าหน้าที่ */}
                                     <div>
                                         <label className="block text-sm font-bold text-gray-700 mb-1">รหัสผ่านเข้าใช้งาน (PIN)</label>
-                                        <input type="password" required placeholder="กรอกรหัสผ่าน 4 หลัก" value={nursePassword} onChange={e => setNursePassword(e.target.value)} className="w-full border-2 border-gray-200 rounded-lg p-3 focus:ring-blue-500 focus:border-blue-500" />
+                                        <input type="password" required placeholder="กรอกรหัสผ่านเพื่อยืนยันตัวตน" value={nursePassword} onChange={e => setNursePassword(e.target.value)} className="w-full border-2 border-gray-200 rounded-lg p-3 focus:ring-blue-500 focus:border-blue-500" />
                                     </div>
                                 </div>
                             )}
@@ -304,10 +320,24 @@
         }
 
         // --- Screen: Dashboard ---
-        function Dashboard({ specimens }) {
+        function Dashboard({ specimens, holidays, repContacts, db, user }) {
             const [viewMode, setViewMode] = useState('active'); // 'active' | 'all'
+            
+            // --- Holiday States ---
+            const [holCompany, setHolCompany] = useState(labCompanies[0]);
+            const [holOther, setHolOther] = useState('');
+            const [holStart, setHolStart] = useState('');
+            const [holEnd, setHolEnd] = useState('');
+            const [holNote, setHolNote] = useState('');
 
-            // ข้อมูลสำหรับกล่องสถิติ (อิงจากที่ยังไม่ยกเลิก)
+            // --- Rep Contact States ---
+            const [repCompany, setRepCompany] = useState(labCompanies[0]);
+            const [repOther, setRepOther] = useState('');
+            const [repName, setRepName] = useState('');
+            const [repPhone, setRepPhone] = useState('');
+            const [repNote, setRepNote] = useState('');
+
+            // --- Stats Calculation ---
             const nonCancelled = specimens.filter(s => !s.status.includes('ยกเลิก'));
             const waitingDraw = nonCancelled.filter(s => s.status === 'รอเจาะเลือด').length;
             const waitingPickup = nonCancelled.filter(s => s.status === 'รอรับสิ่งส่งตรวจ').length;
@@ -316,11 +346,10 @@
             const waitingGiveBack = nonCancelled.filter(s => s.status === 'รอส่งคืนผู้ป่วย' || s.status === 'รอญาติรับคืน').length;
             const finished = nonCancelled.filter(s => s.status.includes('เสร็จสิ้น')).length;
 
-            // ข้อมูลสำหรับตารางแสดงผล
             const ongoingSpecs = nonCancelled.filter(s => !s.status.includes('เสร็จสิ้น'));
             const displayedSpecs = viewMode === 'active' ? ongoingSpecs : specimens;
 
-            // การคำนวณสถิติประสิทธิภาพ (Analytics)
+            // --- TAT Calculation ---
             const completedSpecs = nonCancelled.filter(s => s.status.includes('เสร็จสิ้น') || s.status === 'รับผลกลับมาแล้ว' || s.status === 'รอส่งคืนผู้ป่วย' || s.status === 'รอญาติรับคืน');
             const labStats = {};
             const typeStats = {};
@@ -341,8 +370,18 @@
                 if (pickupLog && resultLog) {
                     const t1 = pickupLog.timestampMs || parseThaiDate(pickupLog.timestamp);
                     const t2 = resultLog.timestampMs || parseThaiDate(resultLog.timestamp);
+                    
                     if (t1 && t2 && t2 >= t1) {
-                        const diff = t2 - t1;
+                        let diff = t2 - t1;
+                        const companyHols = holidays.filter(h => h.labCompany === lab);
+                        companyHols.forEach(h => {
+                            const hStart = new Date(h.startDate).setHours(0,0,0,0);
+                            const hEnd = new Date(h.endDate).setHours(23,59,59,999);
+                            const overlapStart = Math.max(t1, hStart);
+                            const overlapEnd = Math.min(t2, hEnd);
+                            if (overlapStart < overlapEnd) diff -= (overlapEnd - overlapStart);
+                        });
+                        if (diff < 0) diff = 0;
                         labStats[lab].totalTat += diff;
                         labStats[lab].tatCount += 1;
                         typeStats[type].totalTat += diff;
@@ -350,6 +389,45 @@
                     }
                 }
             });
+
+            // --- Handlers ---
+            const handleAddHoliday = async (e) => {
+                e.preventDefault();
+                if(!holStart || !holEnd || !holNote) return alert("กรุณากรอกข้อมูลวันหยุดให้ครบถ้วน");
+                const startDateMs = new Date(holStart).getTime();
+                const endDateMs = new Date(holEnd).getTime();
+                if(endDateMs < startDateMs) return alert("วันที่สิ้นสุดต้องไม่น้อยกว่าวันที่เริ่มต้น");
+
+                const finalLab = holCompany === 'อื่นๆ (โปรดระบุ)' ? holOther : holCompany;
+                await db.collection("holidays").add({
+                    labCompany: finalLab, startDate: holStart, endDate: holEnd, note: holNote, addedBy: user.name, createdAt: Date.now()
+                });
+                setHolStart(''); setHolEnd(''); setHolNote(''); setHolOther('');
+                alert("เพิ่มประกาศวันหยุดเรียบร้อยแล้ว ระยะเวลานี้จะไม่ถูกนำไปคำนวณใน TAT ของบริษัท");
+            };
+
+            const handleDeleteHoliday = async (id) => {
+                if(window.confirm("ต้องการลบประกาศวันหยุดนี้ใช่หรือไม่?")) {
+                    await db.collection("holidays").doc(id).delete();
+                }
+            };
+
+            const handleAddRep = async (e) => {
+                e.preventDefault();
+                if(!repName || !repPhone) return alert("กรุณากรอกชื่อและเบอร์โทรผู้แทน");
+                const finalLab = repCompany === 'อื่นๆ (โปรดระบุ)' ? repOther : repCompany;
+                
+                await db.collection("rep_contacts").add({
+                    labCompany: finalLab, repName: repName, phone: repPhone, note: repNote, addedBy: user.name, createdAt: Date.now()
+                });
+                setRepName(''); setRepPhone(''); setRepNote(''); setRepOther('');
+            };
+
+            const handleDeleteRep = async (id) => {
+                if(window.confirm("ต้องการลบข้อมูลผู้แทนบริษัทนี้ใช่หรือไม่?")) {
+                    await db.collection("rep_contacts").doc(id).delete();
+                }
+            };
 
             return (
                 <div>
@@ -363,7 +441,6 @@
                         <StatCard title="เรียบร้อย" value={finished} icon="fa-check-circle" color="bg-green-500" />
                     </div>
 
-                    {/* ตารางแสดงผู้ป่วย */}
                     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-8">
                         <div className="bg-gray-50 border-b flex gap-6 px-6 pt-4">
                             <button onClick={() => setViewMode('active')} className={`font-bold pb-3 border-b-4 transition ${viewMode === 'active' ? 'text-blue-700 border-blue-600' : 'text-gray-500 border-transparent hover:text-gray-700'}`}>
@@ -376,31 +453,27 @@
                         <div className="overflow-x-auto p-4">
                             <table className="min-w-full text-sm">
                                 <thead className="text-left text-gray-500 bg-gray-50 uppercase text-xs">
-                                    <tr>
-                                        <th className="p-3">HN</th>
-                                        <th className="p-3">ชื่อ-นามสกุล</th>
-                                        <th className="p-3">ประเภท</th>
-                                        <th className="p-3">บริษัท (Lab)</th>
-                                        <th className="p-3">สถานะปัจจุบัน</th>
-                                        <th className="p-3">วันที่ลงทะเบียน</th>
-                                    </tr>
+                                    <tr><th className="p-3">HN</th><th className="p-3">ชื่อ-นามสกุล</th><th className="p-3">ประเภท</th><th className="p-3">บริษัท (Lab)</th><th className="p-3">สถานะปัจจุบัน</th><th className="p-3">ผู้ลงทะเบียน</th></tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
                                     {displayedSpecs.length === 0 ? <tr><td colSpan="6" className="text-center py-8 text-gray-400">ไม่มีข้อมูลรายการ</td></tr> :
-                                        displayedSpecs.map(s => (
-                                            <tr key={s.id} className="hover:bg-blue-50 transition">
-                                                <td className="p-3">{s.hn}</td>
-                                                <td className="p-3 font-bold text-gray-800">{s.patientName}</td>
-                                                <td className="p-3"><span className={`px-2 py-0.5 rounded text-white text-[10px] mr-1 ${s.category==='เลือด'?'bg-red-500':'bg-yellow-500'}`}>{s.category}</span> {s.testType}</td>
-                                                <td className="p-3">{s.labCompany}</td>
-                                                <td className="p-3">
-                                                    <span className={`px-2 py-1 rounded font-bold text-[11px] ${s.status.includes('ยกเลิก') ? 'bg-red-100 text-red-700' : s.status.includes('เสร็จสิ้น') ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
-                                                        {s.status}
-                                                    </span>
-                                                </td>
-                                                <td className="p-3 text-gray-500">{new Date(s.createdAt).toLocaleString('th-TH', {dateStyle: 'short', timeStyle: 'short'})}</td>
-                                            </tr>
-                                        ))
+                                        displayedSpecs.map(s => {
+                                            // ดึงชื่อผู้ลงทะเบียน จาก Log แรกสุด
+                                            const registeredBy = s.logs && s.logs.length > 0 ? s.logs[0].by.split(' (')[0] : '-';
+                                            return (
+                                                <tr key={s.id} className="hover:bg-blue-50 transition">
+                                                    <td className="p-3">{s.hn}</td><td className="p-3 font-bold text-gray-800">{s.patientName}</td>
+                                                    <td className="p-3"><span className={`px-2 py-0.5 rounded text-white text-[10px] mr-1 ${s.category==='เลือด'?'bg-red-500':'bg-yellow-500'}`}>{s.category}</span> {s.testType}</td>
+                                                    <td className="p-3">{s.labCompany}</td>
+                                                    <td className="p-3"><span className={`px-2 py-1 rounded font-bold text-[11px] ${s.status.includes('ยกเลิก') ? 'bg-red-100 text-red-700' : s.status.includes('เสร็จสิ้น') ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>{s.status}</span></td>
+                                                    <td className="p-3 text-xs text-gray-600">
+                                                        <div className="flex items-center gap-1">
+                                                            <i className="fa-solid fa-user-nurse text-blue-400"></i> {registeredBy}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
                                     }
                                 </tbody>
                             </table>
@@ -408,52 +481,35 @@
                     </div>
 
                     <h2 className="text-xl font-bold mb-4 text-gray-800"><i className="fa-solid fa-chart-line text-blue-600 mr-2"></i>รายงานประสิทธิภาพการส่งตรวจ (เฉพาะรายการที่เสร็จสิ้น)</h2>
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
                         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                             <div className="bg-blue-50 p-4 border-b font-bold text-blue-800">ประสิทธิภาพแยกตามบริษัท (Lab)</div>
                             <div className="overflow-x-auto">
                                 <table className="min-w-full">
-                                    <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
-                                        <tr><th className="px-6 py-3 text-left">บริษัท</th><th className="px-6 py-3 text-center">ส่งตรวจ (เคส)</th><th className="px-6 py-3 text-right">ระยะเวลารอผลเฉลี่ย (TAT)</th></tr>
-                                    </thead>
+                                    <thead className="bg-gray-50 text-xs text-gray-500 uppercase"><tr><th className="px-6 py-3 text-left">บริษัท</th><th className="px-6 py-3 text-center">ส่งตรวจ (เคส)</th><th className="px-6 py-3 text-right">ระยะเวลารอผลเฉลี่ย (TAT)</th></tr></thead>
                                     <tbody className="divide-y divide-gray-200">
                                         {Object.keys(labStats).length === 0 ? <tr><td colSpan="3" className="p-6 text-center text-gray-400">ยังไม่มีข้อมูลที่เสร็จสิ้น</td></tr> : 
                                             Object.keys(labStats).sort((a,b) => labStats[b].count - labStats[a].count).map(lab => {
                                                 const stat = labStats[lab];
                                                 const avgTat = stat.tatCount > 0 ? stat.totalTat / stat.tatCount : 0;
-                                                return (
-                                                    <tr key={lab} className="hover:bg-gray-50">
-                                                        <td className="px-6 py-4 font-bold text-gray-800">{lab}</td>
-                                                        <td className="px-6 py-4 text-center">{stat.count}</td>
-                                                        <td className="px-6 py-4 text-right text-blue-600 font-bold">{formatTAT(avgTat)}</td>
-                                                    </tr>
-                                                )
+                                                return <tr key={lab} className="hover:bg-gray-50"><td className="px-6 py-4 font-bold text-gray-800">{lab}</td><td className="px-6 py-4 text-center">{stat.count}</td><td className="px-6 py-4 text-right text-blue-600 font-bold">{formatTAT(avgTat)}</td></tr>
                                             })
                                         }
                                     </tbody>
                                 </table>
                             </div>
                         </div>
-
                         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                             <div className="bg-green-50 p-4 border-b font-bold text-green-800">ประสิทธิภาพแยกตามชนิดการตรวจ (Test Type)</div>
                             <div className="overflow-x-auto">
                                 <table className="min-w-full">
-                                    <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
-                                        <tr><th className="px-6 py-3 text-left">ชนิดการตรวจ</th><th className="px-6 py-3 text-center">ส่งตรวจ (เคส)</th><th className="px-6 py-3 text-right">ระยะเวลารอผลเฉลี่ย (TAT)</th></tr>
-                                    </thead>
+                                    <thead className="bg-gray-50 text-xs text-gray-500 uppercase"><tr><th className="px-6 py-3 text-left">ชนิดการตรวจ</th><th className="px-6 py-3 text-center">ส่งตรวจ (เคส)</th><th className="px-6 py-3 text-right">ระยะเวลารอผลเฉลี่ย (TAT)</th></tr></thead>
                                     <tbody className="divide-y divide-gray-200">
                                         {Object.keys(typeStats).length === 0 ? <tr><td colSpan="3" className="p-6 text-center text-gray-400">ยังไม่มีข้อมูลที่เสร็จสิ้น</td></tr> : 
                                             Object.keys(typeStats).sort((a,b) => typeStats[b].count - typeStats[a].count).map(type => {
                                                 const stat = typeStats[type];
                                                 const avgTat = stat.tatCount > 0 ? stat.totalTat / stat.tatCount : 0;
-                                                return (
-                                                    <tr key={type} className="hover:bg-gray-50">
-                                                        <td className="px-6 py-4 font-bold text-gray-800">{type}</td>
-                                                        <td className="px-6 py-4 text-center">{stat.count}</td>
-                                                        <td className="px-6 py-4 text-right text-green-600 font-bold">{formatTAT(avgTat)}</td>
-                                                    </tr>
-                                                )
+                                                return <tr key={type} className="hover:bg-gray-50"><td className="px-6 py-4 font-bold text-gray-800">{type}</td><td className="px-6 py-4 text-center">{stat.count}</td><td className="px-6 py-4 text-right text-green-600 font-bold">{formatTAT(avgTat)}</td></tr>
                                             })
                                         }
                                     </tbody>
@@ -461,9 +517,117 @@
                             </div>
                         </div>
                     </div>
+
+                    {/* --- ระบบประกาศวันหยุด (Take Note) --- */}
+                    <div className="bg-white rounded-xl shadow-sm border-2 border-red-100 overflow-hidden mb-6">
+                        <div className="bg-red-50 p-4 border-b border-red-100 font-bold text-red-800 flex items-center">
+                            <i className="fa-solid fa-bullhorn mr-2 text-xl"></i> ประชาสัมพันธ์วันหยุดรับสิ่งส่งตรวจ (Holiday Notes)
+                        </div>
+                        <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-8">
+                            <div className="lg:col-span-1 border-r pr-0 lg:pr-6">
+                                <h4 className="font-bold text-gray-700 mb-4 text-sm uppercase">เพิ่มประกาศวันหยุดใหม่</h4>
+                                <form onSubmit={handleAddHoliday} className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-600 mb-1">บริษัท (Lab)</label>
+                                        <select value={holCompany} onChange={e=>setHolCompany(e.target.value)} className="w-full border rounded p-2 text-sm">
+                                            {labCompanies.map(l=><option key={l} value={l}>{l}</option>)}
+                                        </select>
+                                        {holCompany === 'อื่นๆ (โปรดระบุ)' && <input type="text" placeholder="ระบุบริษัท..." value={holOther} onChange={e=>setHolOther(e.target.value)} className="w-full border rounded p-2 mt-2 text-sm" required />}
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div><label className="block text-xs font-bold text-gray-600 mb-1">เริ่มหยุด (Start)</label><input type="date" value={holStart} onChange={e=>setHolStart(e.target.value)} className="w-full border rounded p-2 text-sm" required /></div>
+                                        <div><label className="block text-xs font-bold text-gray-600 mb-1">เปิดรับ (End)</label><input type="date" value={holEnd} onChange={e=>setHolEnd(e.target.value)} className="w-full border rounded p-2 text-sm" required /></div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-600 mb-1">หมายเหตุ (Remark)</label>
+                                        <input type="text" placeholder="เช่น วันหยุดสงกรานต์..." value={holNote} onChange={e=>setHolNote(e.target.value)} className="w-full border rounded p-2 text-sm" required />
+                                    </div>
+                                    <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 rounded text-sm shadow">เพิ่มประกาศ</button>
+                                </form>
+                            </div>
+                            <div className="lg:col-span-2">
+                                <h4 className="font-bold text-gray-700 mb-4 text-sm uppercase">รายการประกาศวันหยุดในระบบ</h4>
+                                <div className="space-y-3 max-h-64 overflow-y-auto pr-2">
+                                    {holidays.length === 0 ? <p className="text-gray-400 text-sm text-center py-4">ไม่มีประกาศวันหยุด</p> : 
+                                        holidays.sort((a,b)=>b.createdAt - a.createdAt).map(h => {
+                                            const s = new Date(h.startDate).toLocaleDateString('th-TH');
+                                            const e = new Date(h.endDate).toLocaleDateString('th-TH');
+                                            return (
+                                                <div key={h.firebaseId} className="bg-gray-50 border border-gray-200 rounded p-3 flex justify-between items-start">
+                                                    <div>
+                                                        <p className="font-bold text-red-600 text-sm"><i className="fa-solid fa-store-slash mr-1"></i>{h.labCompany}</p>
+                                                        <p className="text-xs text-gray-600 mt-1"><strong>หยุด:</strong> {s} - {e}</p>
+                                                        <p className="text-xs text-gray-500 mt-1"><strong>หมายเหตุ:</strong> {h.note} <span className="text-[10px] text-gray-400 ml-2">(โดย {h.addedBy})</span></p>
+                                                    </div>
+                                                    <button onClick={()=>handleDeleteHoliday(h.firebaseId)} className="text-gray-400 hover:text-red-500"><i className="fa-solid fa-trash"></i></button>
+                                                </div>
+                                            )
+                                        })
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* --- ระบบข้อมูลติดต่อผู้แทน (Rep Contacts) --- */}
+                    <div className="bg-white rounded-xl shadow-sm border-2 border-teal-100 overflow-hidden mb-8">
+                        <div className="bg-teal-50 p-4 border-b border-teal-100 font-bold text-teal-800 flex items-center">
+                            <i className="fa-solid fa-address-book mr-2 text-xl"></i> ข้อมูลติดต่อผู้แทนบริษัท (Rep Contacts)
+                        </div>
+                        <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-8">
+                            <div className="lg:col-span-1 border-r pr-0 lg:pr-6">
+                                <h4 className="font-bold text-gray-700 mb-4 text-sm uppercase">เพิ่มข้อมูลผู้แทน</h4>
+                                <form onSubmit={handleAddRep} className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-600 mb-1">บริษัท (Lab)</label>
+                                        <select value={repCompany} onChange={e=>setRepCompany(e.target.value)} className="w-full border rounded p-2 text-sm focus:border-teal-500 focus:ring-teal-500">
+                                            {labCompanies.map(l=><option key={l} value={l}>{l}</option>)}
+                                        </select>
+                                        {repCompany === 'อื่นๆ (โปรดระบุ)' && <input type="text" placeholder="ระบุบริษัท..." value={repOther} onChange={e=>setRepOther(e.target.value)} className="w-full border rounded p-2 mt-2 text-sm focus:border-teal-500 focus:ring-teal-500" required />}
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-600 mb-1">ชื่อผู้แทน (Rep Name)</label>
+                                        <input type="text" placeholder="ชื่อ-นามสกุล..." value={repName} onChange={e=>setRepName(e.target.value)} className="w-full border rounded p-2 text-sm focus:border-teal-500 focus:ring-teal-500" required />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-600 mb-1">เบอร์โทรศัพท์ (Phone)</label>
+                                        <input type="text" placeholder="08X-XXX-XXXX" value={repPhone} onChange={e=>setRepPhone(e.target.value)} className="w-full border rounded p-2 text-sm focus:border-teal-500 focus:ring-teal-500" required />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-600 mb-1">หมายเหตุเพิ่มเติม (Note)</label>
+                                        <input type="text" placeholder="เช่น โทรแจ้งเมื่อชิ้นเนื้อพร้อม..." value={repNote} onChange={e=>setRepNote(e.target.value)} className="w-full border rounded p-2 text-sm focus:border-teal-500 focus:ring-teal-500" />
+                                    </div>
+                                    <button type="submit" className="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 rounded text-sm shadow">เพิ่มผู้แทน</button>
+                                </form>
+                            </div>
+                            <div className="lg:col-span-2">
+                                <h4 className="font-bold text-gray-700 mb-4 text-sm uppercase">รายชื่อผู้แทนบริษัทสำหรับประสานงาน</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[400px] overflow-y-auto pr-2">
+                                    {repContacts.length === 0 ? <p className="text-gray-400 text-sm py-4 col-span-2 text-center">ไม่มีข้อมูลผู้แทน</p> : 
+                                        repContacts.sort((a,b)=>b.createdAt - a.createdAt).map(rep => (
+                                            <div key={rep.firebaseId} className="bg-white border border-teal-200 rounded-lg p-4 shadow-sm hover:shadow-md transition relative">
+                                                <button onClick={()=>handleDeleteRep(rep.firebaseId)} className="absolute top-2 right-2 text-gray-300 hover:text-red-500"><i className="fa-solid fa-times"></i></button>
+                                                <h5 className="font-bold text-teal-800 border-b border-teal-100 pb-2 mb-2"><i className="fa-solid fa-building mr-2"></i>{rep.labCompany}</h5>
+                                                <p className="text-sm text-gray-800 font-bold"><i className="fa-solid fa-user-tie mr-2 text-teal-500"></i>{rep.repName}</p>
+                                                <p className="text-sm text-gray-800 mt-1"><i className="fa-solid fa-phone mr-2 text-teal-500"></i>{rep.phone}</p>
+                                                {rep.note && (
+                                                    <div className="mt-3 bg-yellow-50 text-yellow-800 text-xs p-2 rounded border border-yellow-200">
+                                                        <i className="fa-solid fa-note-sticky mr-1"></i> {rep.note}
+                                                    </div>
+                                                )}
+                                                <p className="text-[10px] text-gray-400 mt-2 text-right">อัปเดตโดย: {rep.addedBy}</p>
+                                            </div>
+                                        ))
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
             );
         }
+
         function StatCard({ title, value, icon, color }) {
             return (
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex flex-col items-center justify-center text-center">
@@ -475,13 +639,28 @@
         }
 
         // --- Screen: Register ---
-        function RegisterScreen({ db, user }) {
+        function RegisterScreen({ db, user, holidays }) {
             const [formData, setFormData] = useState({ 
                 hn: '', name: '', doctor: doctors[0], otherDoctor: '',
                 category: 'ชิ้นเนื้อ', type: testTypes[0], otherType: '', lab: labCompanies[0], otherLab: '' 
             });
             const [isSubmitting, setIsSubmitting] = useState(false);
             const [showSuccessModal, setShowSuccessModal] = useState(false);
+            const [holidayWarning, setHolidayWarning] = useState(null);
+
+            useEffect(() => {
+                const finalLab = formData.lab === 'อื่นๆ (โปรดระบุ)' ? formData.otherLab : formData.lab;
+                if (!finalLab) { setHolidayWarning(null); return; }
+
+                const nowMs = Date.now();
+                const activeHol = holidays.find(h => {
+                    if (h.labCompany !== finalLab) return false;
+                    const startMs = new Date(h.startDate).setHours(0,0,0,0);
+                    const endMs = new Date(h.endDate).setHours(23,59,59,999);
+                    return nowMs >= startMs && nowMs <= endMs;
+                });
+                setHolidayWarning(activeHol || null);
+            }, [formData.lab, formData.otherLab, holidays]);
 
             const handleSubmit = async (e) => {
                 e.preventDefault();
@@ -522,9 +701,7 @@
                     {showSuccessModal && (
                         <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4">
                             <div className="bg-white p-8 rounded-xl shadow-2xl flex flex-col items-center animate-pop max-w-sm w-full">
-                                <div className="w-20 h-20 bg-green-100 text-green-500 rounded-full flex items-center justify-center text-4xl mb-4">
-                                    <i className="fa-solid fa-check"></i>
-                                </div>
+                                <div className="w-20 h-20 bg-green-100 text-green-500 rounded-full flex items-center justify-center text-4xl mb-4"><i className="fa-solid fa-check"></i></div>
                                 <h3 className="text-2xl font-bold text-gray-800 mb-2">บันทึกสำเร็จ!</h3>
                                 <p className="text-gray-600 text-center mb-6">ข้อมูลคำสั่งตรวจถูกส่งเข้าระบบเรียบร้อยแล้ว</p>
                                 <button onClick={() => setShowSuccessModal(false)} className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700">ปิด</button>
@@ -533,31 +710,28 @@
                     )}
 
                     <h2 className="text-2xl font-bold mb-6 text-gray-800">ลงทะเบียนสิ่งส่งตรวจ</h2>
+                    
+                    {holidayWarning && (
+                        <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded shadow-sm animate-pop">
+                            <p className="font-bold"><i className="fa-solid fa-circle-exclamation mr-2"></i>แจ้งเตือน: บริษัทปลายทางกำลังหยุดทำการ</p>
+                            <p className="text-sm mt-1">ขณะนี้ <strong>{holidayWarning.labCompany}</strong> อยู่ในช่วงวันหยุด ({new Date(holidayWarning.startDate).toLocaleDateString('th-TH')} - {new Date(holidayWarning.endDate).toLocaleDateString('th-TH')})</p>
+                            <p className="text-sm mt-1 font-bold">หมายเหตุ: {holidayWarning.note}</p>
+                        </div>
+                    )}
+
                     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8">
                         <form onSubmit={handleSubmit} className="space-y-6">
                             <div className="mb-6">
                                 <label className="block text-sm font-bold text-gray-700 mb-2">ประเภทสิ่งส่งตรวจ</label>
                                 <div className="flex gap-6">
-                                    <label className="flex items-center cursor-pointer">
-                                        <input type="radio" name="category" value="ชิ้นเนื้อ" checked={formData.category === 'ชิ้นเนื้อ'} onChange={e => setFormData({...formData, category: e.target.value})} className="mr-2" />
-                                        <span><i className="fa-solid fa-cube text-yellow-600 mr-1"></i> ชิ้นเนื้อ (Tissue)</span>
-                                    </label>
-                                    <label className="flex items-center cursor-pointer">
-                                        <input type="radio" name="category" value="เลือด" checked={formData.category === 'เลือด'} onChange={e => setFormData({...formData, category: e.target.value})} className="mr-2" />
-                                        <span><i className="fa-solid fa-droplet text-red-600 mr-1"></i> เลือด (Blood)</span>
-                                    </label>
+                                    <label className="flex items-center cursor-pointer"><input type="radio" name="category" value="ชิ้นเนื้อ" checked={formData.category === 'ชิ้นเนื้อ'} onChange={e => setFormData({...formData, category: e.target.value})} className="mr-2" /><span><i className="fa-solid fa-cube text-yellow-600 mr-1"></i> ชิ้นเนื้อ (Tissue)</span></label>
+                                    <label className="flex items-center cursor-pointer"><input type="radio" name="category" value="เลือด" checked={formData.category === 'เลือด'} onChange={e => setFormData({...formData, category: e.target.value})} className="mr-2" /><span><i className="fa-solid fa-droplet text-red-600 mr-1"></i> เลือด (Blood)</span></label>
                                 </div>
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">HN ผู้ป่วย</label>
-                                    <input type="text" required value={formData.hn} onChange={e => setFormData({...formData, hn: e.target.value})} className="w-full border-gray-300 border rounded-lg p-2" />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">ชื่อ-นามสกุล ผู้ป่วย</label>
-                                    <input type="text" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full border-gray-300 border rounded-lg p-2" />
-                                </div>
+                                <div><label className="block text-sm font-medium text-gray-700 mb-1">HN ผู้ป่วย</label><input type="text" required value={formData.hn} onChange={e => setFormData({...formData, hn: e.target.value})} className="w-full border-gray-300 border rounded-lg p-2" /></div>
+                                <div><label className="block text-sm font-medium text-gray-700 mb-1">ชื่อ-นามสกุล ผู้ป่วย</label><input type="text" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full border-gray-300 border rounded-lg p-2" /></div>
                             </div>
                             
                             <div className="space-y-2">
